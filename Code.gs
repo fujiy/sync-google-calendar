@@ -35,6 +35,12 @@ function main(){
   syncCalendars(SYNC_SETTINGS, startDate, endDate);
 }
 
+function unique_id_of(event) {
+  const id = event.getId();
+  const time = event.getStartTime();
+  return id + '_' + time.getTime();
+}
+
 function syncCalendars(calendar_settings, startDate, endDate) {
   
   let calendar_events = {};
@@ -51,7 +57,7 @@ function syncCalendars(calendar_settings, startDate, endDate) {
 
     const events = calendar.getEvents(startDate, endDate);
     let copied_events = [];
-    let original_events = [];
+    let original_events = {};
 
     for (let event of events) {
       description = event.getDescription();
@@ -67,7 +73,7 @@ function syncCalendars(calendar_settings, startDate, endDate) {
             event.getMyStatus() == CalendarApp.GuestStatus.INVITED) {
           continue;
         }
-        original_events.push(event);
+        original_events[unique_id_of(event)] = event;
       }
     }
 
@@ -93,15 +99,20 @@ function syncCalendars(calendar_settings, startDate, endDate) {
       const original_calendar = calendar_events[copied.original_calendar_id].calendar;
       // Logger.log('hoge');
       Logger.log('Pulling from ' + original_calendar.getName() + ' to ' + calendar_event.calendar.getName());
-      const original_event = original_calendar.getEventById(copied.original_event_id);
+      const original_event = calendar_events[copied.original_calendar_id].original_events[copied.original_event_id];
       if (original_event) {
         Logger.log('  updated: ' + original_event.getTitle() 
-                   + ' (' + original_event.getStartTime() + ', ' + original_event.getEndTime() + ')');
-        copied.event.setTime(original_event.getStartTime(), original_event.getEndTime());
+                   + ' (' + original_event.getStartTime() + ', ' + original_event.getEndTime() + ') '
+                   + copied.original_event_id);
+        if (copied.event.getEndTime() != original_event.getEndTime())
+          copied.event.setTime(original_event.getStartTime(), original_event.getEndTime());
+        if (copied.event.getLocation() != original_event.getLocation())
+          copied.event.setLocation(original_event.getLocation());
       }
       else {
         Logger.log('  deleted: ' + copied.event.getTitle() 
-                   + ' (' + copied.event.getStartTime() + ', ' + copied.event.getEndTime() + ')');
+                   + ' (' + copied.event.getStartTime() + ', ' + copied.event.getEndTime() + ') '
+                   + copied.original_event_id);
         copied.event.deleteEvent();
       }
     }
@@ -112,7 +123,7 @@ function syncCalendars(calendar_settings, startDate, endDate) {
   for (let [calendar_id, calendar_event] of Object.entries(calendar_events)) {
     // Push original events
     Logger.log('Pushing from ' + calendar_event.calendar.getName());
-    for (let original_event of calendar_event.original_events) {
+    for (let [original_event_id, original_event] of Object.entries(calendar_event.original_events)) {
       for (let calendar_id_to in calendar_events) {
         if (calendar_id_to == calendar_id) continue;
 
@@ -124,7 +135,7 @@ function syncCalendars(calendar_settings, startDate, endDate) {
         let already_copied = false;
         for (const copied of calendar_event_to.copied_events) {
           if (copied.original_calendar_id == calendar_id &&
-              copied.original_event_id == original_event.getId()) {
+              copied.original_event_id == original_event_id) {
             already_copied = true;
             break;
           }
@@ -138,9 +149,11 @@ function syncCalendars(calendar_settings, startDate, endDate) {
           }
 
           Logger.log('  created: ' + original_event.getTitle() + ' as ' + title  
-                     + ' (' + original_event.getStartTime() + ', ' + original_event.getEndTime() + ')');
+                     + ' (' + original_event.getStartTime() + ', ' + original_event.getEndTime() + ') '
+                     + original_event_id);
           event = calendar_event_to.calendar.createEvent(title, original_event.getStartTime(), original_event.getEndTime());
-          event.setDescription('Imported from ' + calendar_id + ' ' + original_event.getId());
+          event.setDescription('Imported from ' + calendar_id + ' ' + original_event_id);
+          event.setLocation(original_event.getLocation());
         }
       };
     }
